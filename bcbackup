@@ -1,0 +1,126 @@
+#!/usr/bin/python3
+#
+# bandcamp collection backup tool
+#
+# Usage:
+#   $ sudo pip3 install requests demjson
+#   $ ./bcbackup $user $pw $format > urls && wget -i urls
+#
+# Copyright (c) 2016, Aurelien Aptel <aurelien.aptel@gmail.com>
+#
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
+
+import requests as R
+import argparse
+import re
+import demjson
+from pprint import pprint
+
+FORMATS = ['aac-hi', 'aiff-lossless',
+           'alac', 'flac', 'mp3-320', 'mp3-v0',
+           'vorbis', 'wav']
+
+def main():
+    ap = argparse.ArgumentParser(
+        formatter_class=argparse.RawTextHelpFormatter,
+        description=
+        "backup your bandcamp collection!\n"
+        " * print direct download urls of your album collection in the format of your choice.\n"
+        " * feed the result to the downloader tool of your choice e.g. wget.\n"
+        " * ???\n"
+        " * profit!\n"
+        "\n"
+        "Example: $ ./bcbackup my_user my_pw vorbis > urls && wget -nc --content-disposition -i urls\n"
+    )
+    ap.add_argument('user', help='your bandcamp username')
+    ap.add_argument('password', help='your bandcamp password')
+    ap.add_argument('format', help='audio format', choices=FORMATS)
+    args = ap.parse_args()
+    bc = Collection(args.user, args.password)
+    if not bc.login():
+        print("cannot login (wrong user/pw)")
+        exit(1)
+    if not bc.fetch_data():
+        print("error while fetching collection data")
+        exit(1)
+    bc.print_album_list(args.format)
+
+class Collection:
+    def __init__(self, user, pw):
+        self.user = user
+        self.pw = pw
+        self.b = R.Session()
+        self.logged = False
+        self.data = None
+
+    def login(self):
+        self.b.get('https://bandcamp.com/login')
+        r = self.b.post('https://bandcamp.com/login_cb',
+                        data={
+                            'user.name': self.user,
+                            'login.password': self.pw,
+                            'login.twofactor': '',
+                            'login.twofactor_remember': '',
+                            'login.from': '',
+                        })
+        try:
+            if r.json()['ok']:
+                self.logged = True
+            return self.logged
+        except:
+            return False
+
+
+    def fetch_data(self):
+        r = self.b.get('http://bandcamp.com/%s'%self.user)
+        m = re.search(r'^var CollectionData = ((?:.|\n)+?^\});', r.text, flags=re.M)
+        if m:
+            s = m.group(1)
+            self.data = demjson.decode(s)
+            #pprint(self.data)
+        return self.data
+
+    def fetch_dl_data(self, url, fmt):
+        dldata = None
+        r = self.b.get(url)
+        m = re.search(r'^var DownloadData = ((?:.|\n)+?^\});', r.text, flags=re.M)
+        if m:
+            s = m.group(1)
+            dldata = demjson.decode(s)
+            d = dldata['items'][0]
+            #pprint(dldata)
+            return {'artist':d['artist'], 'title':d['title'], 'url':d['downloads'][fmt]['url']}
+
+        return None
+
+    def print_album_list(self, fmt):
+        res = []
+        printfmt = '# {artist} - {title}\n{url}\n'
+
+        for sid,url in self.data['redownload_urls'].items():
+            res.append(self.fetch_dl_data(url, fmt))
+
+
+
+        print("#\n# Usage: $ wget -i this_file\n# remove lines of album you don't want\n")
+        for e in sorted(res, key=lambda x: x['artist']):
+            print(printfmt.format(**e))
+
+if __name__ == '__main__':
+    main()
