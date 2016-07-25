@@ -46,7 +46,7 @@ def main():
         " * ???\n"
         " * profit!\n"
         "\n"
-        "Example: $ ./bcbackup my_user my_pw vorbis > urls && wget -nc --content-disposition -i urls\n"
+        "Example: $ ./bcbackup my_user my_pw vorbis > urls && wget -i <(grep -v '^#' urls)\n"
     )
     ap.add_argument('user', help='your bandcamp username')
     ap.add_argument('password', help='your bandcamp password')

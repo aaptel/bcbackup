@@ -18,7 +18,7 @@ This tool prints direct download links of the bandcamp albums you own.
     $ $EDITOR urls
 
     # remove comments and download
-    $ wget -c -i <(grep -v '^#' urls)
+    $ wget -i <(grep -v '^#' urls)
 
 
 See `./bcbackup -h` for more details.
